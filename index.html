@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Badminton Match Manager</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="theme-color" content="#0f1420" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Badminton" />
+  <link rel="apple-touch-icon" href="./icon-192.png" />
+  <link rel="icon" type="image/png" href="./icon-192.png" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>🏸 Badminton Match Manager</h1>
+    <p class="subtitle">Kelola peserta, acak pertandingan, tanpa partner berulang</p>
+  </header>
+
+  <main class="container">
+    <!-- ====== FORM TAMBAH PEMAIN ====== -->
+    <section class="card">
+      <h2>Tambah Pemain</h2>
+      <form id="player-form" class="player-form">
+        <input
+          type="text"
+          id="player-name"
+          placeholder="Nama pemain"
+          autocomplete="off"
+          required
+        />
+        <select id="player-level" required>
+          <option value="Beginner">Beginner</option>
+          <option value="Beginner Plus">Beginner Plus</option>
+          <option value="Intermediate">Intermediate</option>
+        </select>
+        <button type="submit" class="btn btn-primary">Tambah</button>
+      </form>
+      <p id="form-message" class="form-message"></p>
+    </section>
+
+    <!-- ====== TABEL PEMAIN PER LEVEL ====== -->
+    <section class="card">
+      <div class="section-head">
+        <h2>Daftar Pemain per Level</h2>
+        <span id="player-count" class="pill">0 pemain</span>
+      </div>
+      <div class="levels-grid" id="levels-grid">
+        <!-- diisi oleh JS -->
+      </div>
+    </section>
+
+    <!-- ====== KONTROL RANDOM MATCH ====== -->
+    <section class="card">
+      <div class="section-head">
+        <h2>Acak Pertandingan</h2>
+        <button id="random-btn" class="btn btn-accent">🎲 Random 4 Pemain</button>
+      </div>
+      <p class="hint">
+        1 match = 4 pemain → 2 tim seimbang (tiap tim 2 level berbeda).
+        Pemain yang sudah pernah satu tim tidak akan dipasangkan lagi.
+      </p>
+      <p id="random-message" class="form-message"></p>
+
+      <div id="match-preview" class="match-preview hidden">
+        <div class="team team-a">
+          <h3>Tim A</h3>
+          <ul id="team-a-list"></ul>
+        </div>
+        <div class="vs">VS</div>
+        <div class="team team-b">
+          <h3>Tim B</h3>
+          <ul id="team-b-list"></ul>
+        </div>
+      </div>
+      <div id="match-confirm" class="match-confirm hidden">
+        <button id="save-match-btn" class="btn btn-primary">✓ Simpan Match</button>
+        <button id="reroll-btn" class="btn btn-ghost">↻ Acak Lagi</button>
+      </div>
+    </section>
+
+    <!-- ====== ADD MATCH MANUAL ====== -->
+    <section class="card">
+      <h2>Tambah Match Manual</h2>
+      <p class="hint">
+        Pilih 4 pemain yang sudah terdaftar. Match manual mengabaikan keseimbangan level
+        dan boleh berisi level apa saja (misalnya atas permintaan pemain).
+      </p>
+      <div class="manual-grid">
+        <div class="manual-team manual-team-a">
+          <h3>Tim A</h3>
+          <select class="manual-select" id="manual-a1"></select>
+          <select class="manual-select" id="manual-a2"></select>
+        </div>
+        <div class="vs">VS</div>
+        <div class="manual-team manual-team-b">
+          <h3>Tim B</h3>
+          <select class="manual-select" id="manual-b1"></select>
+          <select class="manual-select" id="manual-b2"></select>
+        </div>
+      </div>
+      <div class="manual-actions">
+        <button id="manual-add-btn" class="btn btn-primary">+ Tambah Match</button>
+        <button id="manual-clear-btn" class="btn btn-ghost">Kosongkan Pilihan</button>
+      </div>
+      <p id="manual-message" class="form-message"></p>
+    </section>
+
+    <!-- ====== TABEL MATCH ====== -->
+    <section class="card">
+      <div class="section-head">
+        <h2>Tabel Match</h2>
+        <span id="match-count" class="pill">0 match</span>
+      </div>
+      <div class="table-wrap">
+        <table class="match-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Tim A</th>
+              <th>Tim B</th>
+              <th>Waktu</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="match-tbody">
+            <!-- diisi oleh JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ====== RESET ====== -->
+    <section class="card danger-zone">
+      <div class="section-head">
+        <h2>Reset Data</h2>
+      </div>
+      <div class="reset-buttons">
+        <button id="reset-matches-btn" class="btn btn-ghost">Hapus Semua Match</button>
+        <button id="reset-all-btn" class="btn btn-danger">Hapus Semua Data</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+
+  <!-- Registrasi service worker untuk dukungan offline (PWA). -->
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker
+          .register("./service-worker.js")
+          .catch((err) => console.warn("Service worker gagal didaftarkan:", err));
+      });
+    }
+  </script>
+</body>
+</html>
