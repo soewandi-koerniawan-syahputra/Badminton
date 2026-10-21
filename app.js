@@ -17,11 +17,15 @@ const LEVEL_POINTS = {
   "Intermediate": 3,
 };
 
-/** @typedef {{id:string, name:string, level:string}} Player */
-/** @typedef {{id:string, teamA:string[], teamB:string[], time:string}} Match */
+/** Lama istirahat: pemain yang baru main harus duduk 3 match sebelum boleh lagi. */
+const REST_MATCHES = 3;
 
-/** @type {{players: Player[], matches: Match[]}} */
-let state = { players: [], matches: [] };
+/** @typedef {{id:string, name:string, level:string}} Player */
+/** @typedef {{id:string, teamA:string[], teamB:string[], court:string|null, time:string}} Match */
+/** @typedef {{id:string, name:string}} Court */
+
+/** @type {{players: Player[], matches: Match[], courts: Court[]}} */
+let state = { players: [], matches: [], courts: [] };
 
 /** Pasangan tim dari match tersimpul, dipakai untuk cegah partner berulang. */
 let pendingMatch = null; // { teamA: Player[], teamB: Player[] }
@@ -36,6 +40,7 @@ function load() {
   }
   if (!Array.isArray(state.players)) state.players = [];
   if (!Array.isArray(state.matches)) state.matches = [];
+  if (!Array.isArray(state.courts)) state.courts = [];
 }
 
 function save() {
@@ -98,6 +103,26 @@ function buildPlayCounts() {
     }
   }
   return counts;
+}
+
+/**
+ * Kumpulan id pemain yang sedang "istirahat": mereka yang ikut bermain
+ * dalam `n` match terakhir. Pemain ini diprioritaskan untuk TIDAK dipilih
+ * di match berikutnya, supaya tidak langsung main lagi berturut-turut.
+ */
+function buildRestingPlayers(n) {
+  const resting = new Set();
+  const recent = state.matches.slice(-n);
+  for (const m of recent) {
+    for (const id of [...m.teamA, ...m.teamB]) resting.add(id);
+  }
+  return resting;
+}
+
+/** Pilih satu nama lapangan secara acak, atau null jika belum ada lapangan. */
+function pickRandomCourt() {
+  if (state.courts.length === 0) return null;
+  return shuffle(state.courts)[0].name;
 }
 
 /* ---------------- Rendering: Players ---------------- */
@@ -183,26 +208,87 @@ function renderMatches() {
   tbody.innerHTML = "";
 
   if (state.matches.length === 0) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="5">Belum ada match tercatat</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Belum ada match tercatat</td></tr>`;
   } else {
     state.matches.forEach((m, idx) => {
       const tr = document.createElement("tr");
+      const courtHtml = m.court
+        ? `<span class="court-tag">${escapeHtml(m.court)}</span>`
+        : `<span class="court-tag" style="opacity:.5;border-style:dashed">-</span>`;
       tr.innerHTML = `
         <td>${idx + 1}</td>
+        <td>${courtHtml}</td>
         <td class="team-cell">${teamCellHtml(m.teamA)}</td>
         <td class="team-cell">${teamCellHtml(m.teamB)}</td>
         <td>${m.time}</td>
-        <td><button class="delete-match" data-id="${m.id}">Hapus</button></td>
+        <td>
+          <button class="copy-match" data-id="${m.id}">Copy</button>
+          <button class="delete-match" data-id="${m.id}">Hapus</button>
+        </td>
       `;
       tbody.appendChild(tr);
     });
     tbody.querySelectorAll(".delete-match").forEach((btn) => {
       btn.addEventListener("click", () => deleteMatch(btn.dataset.id));
     });
+    tbody.querySelectorAll(".copy-match").forEach((btn) => {
+      btn.addEventListener("click", () => copyMatch(btn.dataset.id, btn));
+    });
   }
 
   document.getElementById("match-count").textContent =
     `${state.matches.length} match`;
+}
+
+/** Teks match untuk disalin: hanya lapangan + nama pemain, tanpa level. */
+function matchCopyText(m) {
+  const names = (ids) =>
+    ids.map((id) => (playerById(id) ? playerById(id).name : "(dihapus)")).join(" & ");
+  const lines = [];
+  if (m.court) lines.push(m.court);
+  lines.push(names(m.teamA));
+  lines.push("vs");
+  lines.push(names(m.teamB));
+  return lines.join("\n");
+}
+
+/** Salin teks match ke clipboard, dengan fallback bila clipboard API tak ada. */
+function copyMatch(id, btn) {
+  const m = state.matches.find((x) => x.id === id);
+  if (!m) return;
+  const text = matchCopyText(m);
+
+  const markCopied = () => {
+    const old = btn.textContent;
+    btn.textContent = "Tersalin ✓";
+    btn.classList.add("copied");
+    setTimeout(() => {
+      btn.textContent = old;
+      btn.classList.remove("copied");
+    }, 1500);
+  };
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(markCopied).catch(() => fallbackCopy(text, markCopied));
+  } else {
+    fallbackCopy(text, markCopied);
+  }
+}
+
+function fallbackCopy(text, onDone) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand("copy");
+    if (onDone) onDone();
+  } catch (e) {
+    alert("Gagal menyalin otomatis. Teks:\n\n" + text);
+  }
+  document.body.removeChild(ta);
 }
 
 function escapeHtml(str) {
@@ -242,6 +328,63 @@ function removePlayer(id) {
   state.players = state.players.filter((x) => x.id !== id);
   save();
   renderPlayers();
+}
+
+/* ---------------- Actions: Courts (Lapangan) ---------------- */
+function renderCourts() {
+  const ul = document.getElementById("court-list");
+  ul.innerHTML = "";
+
+  if (state.courts.length === 0) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "Belum ada lapangan. Match akan tampil tanpa lapangan.";
+    ul.appendChild(li);
+  } else {
+    for (const c of state.courts) {
+      const li = document.createElement("li");
+      const name = document.createElement("span");
+      name.textContent = c.name;
+      const btn = document.createElement("button");
+      btn.className = "remove-court";
+      btn.title = "Hapus lapangan";
+      btn.textContent = "✕";
+      btn.addEventListener("click", () => removeCourt(c.id));
+      li.appendChild(name);
+      li.appendChild(btn);
+      ul.appendChild(li);
+    }
+  }
+
+  document.getElementById("court-count").textContent =
+    `${state.courts.length} lapangan`;
+}
+
+function addCourt(name) {
+  name = name.trim();
+  const msg = document.getElementById("court-message");
+  if (!name) {
+    showMsg(msg, "Nama lapangan tidak boleh kosong.", "error");
+    return false;
+  }
+  if (state.courts.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+    showMsg(msg, `Lapangan "${name}" sudah ada.`, "error");
+    return false;
+  }
+  state.courts.push({ id: uid(), name });
+  save();
+  renderCourts();
+  showMsg(msg, `Lapangan "${name}" ditambahkan.`, "success");
+  return true;
+}
+
+function removeCourt(id) {
+  const c = state.courts.find((x) => x.id === id);
+  if (!c) return;
+  if (!confirm(`Hapus lapangan "${c.name}"?`)) return;
+  state.courts = state.courts.filter((x) => x.id !== id);
+  save();
+  renderCourts();
 }
 
 /* ---------------- Random Match Logic ---------------- */
@@ -307,52 +450,20 @@ function generateMatch() {
   }
 
   const past = buildPastPartners();
-  const playCounts = buildPlayCounts();
+  const resting = buildRestingPlayers(REST_MATCHES);
 
-  // Kolam "fairness": hanya pemain dengan jumlah main = minimum.
-  const minPlays = Math.min(...state.players.map((p) => playCounts[p.id] || 0));
-  const eligible = state.players.filter(
-    (p) => (playCounts[p.id] || 0) === minPlays
-  );
-  const everyone = state.players;
+  // Coba dulu dengan aturan istirahat (pemain yang baru main dikecualikan).
+  // Jika tidak cukup pemain untuk membentuk match, ulangi TANPA aturan
+  // istirahat supaya match tetap bisa dibuat.
+  let result = searchMatch(past, resting);
+  if (result) return result;
 
-  // Tahapan pelonggaran, dari paling ketat ke paling longgar.
-  const stages = [
-    {
-      pool: eligible,
-      rules: { balanced: true, noRepeatPartner: true },
-      relaxed: [],
-    },
-    {
-      pool: eligible,
-      rules: { balanced: false, noRepeatPartner: true },
-      relaxed: ["keseimbangan level"],
-    },
-    {
-      pool: eligible,
-      rules: { balanced: false, noRepeatPartner: false },
-      relaxed: ["keseimbangan level", "tanpa partner berulang"],
-    },
-    {
-      pool: everyone,
-      rules: { balanced: false, noRepeatPartner: false },
-      relaxed: ["keseimbangan level", "tanpa partner berulang", "pemerataan giliran"],
-    },
-  ];
-
-  for (const stage of stages) {
-    const candidates = collectCandidates(stage.pool, past, stage.rules);
-    if (candidates.length === 0) continue;
-
-    // Prioritaskan kandidat terbaik di tahap ini: yang seimbang & tak berulang
-    // tetap diutamakan walau aturannya sudah dilonggarkan.
-    const best = pickBestCandidate(candidates);
-    return {
-      teamA: best.teamA,
-      teamB: best.teamB,
-      note: best.balanced ? "seimbang" : "tidak-seimbang",
-      relaxed: stage.relaxed,
-    };
+  result = searchMatch(past, new Set());
+  if (result) {
+    if (result.relaxed.indexOf("istirahat pemain") === -1) {
+      result.relaxed = ["istirahat pemain", ...result.relaxed];
+    }
+    return result;
   }
 
   return {
@@ -360,6 +471,42 @@ function generateMatch() {
       "Tidak ada kombinasi 4 pemain yang bisa dibentuk sama sekali. " +
       "Pastikan ada minimal 4 pemain terdaftar.",
   };
+}
+
+/**
+ * Jalankan pencarian match bertahap pada kumpulan pemain yang BUKAN sedang
+ * istirahat (resting dikecualikan). Mengembalikan objek match atau null.
+ */
+function searchMatch(past, resting) {
+  const available = state.players.filter((p) => !resting.has(p.id));
+  if (available.length < 4) return null;
+
+  const playCounts = buildPlayCounts();
+  const minPlays = Math.min(...available.map((p) => playCounts[p.id] || 0));
+  const eligible = available.filter(
+    (p) => (playCounts[p.id] || 0) === minPlays
+  );
+
+  const stages = [
+    { pool: eligible, rules: { balanced: true, noRepeatPartner: true }, relaxed: [] },
+    { pool: eligible, rules: { balanced: false, noRepeatPartner: true }, relaxed: ["keseimbangan level"] },
+    { pool: eligible, rules: { balanced: false, noRepeatPartner: false }, relaxed: ["keseimbangan level", "tanpa partner berulang"] },
+    { pool: available, rules: { balanced: false, noRepeatPartner: false }, relaxed: ["keseimbangan level", "tanpa partner berulang", "pemerataan giliran"] },
+  ];
+
+  for (const stage of stages) {
+    const candidates = collectCandidates(stage.pool, past, stage.rules);
+    if (candidates.length === 0) continue;
+
+    const best = pickBestCandidate(candidates);
+    return {
+      teamA: best.teamA,
+      teamB: best.teamB,
+      note: best.balanced ? "seimbang" : "tidak-seimbang",
+      relaxed: stage.relaxed.slice(),
+    };
+  }
+  return null;
 }
 
 /**
@@ -409,7 +556,11 @@ function teamSplits(four) {
 
 /* ---------------- Match preview & save ---------------- */
 function showPreview(match) {
-  pendingMatch = { teamA: match.teamA, teamB: match.teamB };
+  pendingMatch = {
+    teamA: match.teamA,
+    teamB: match.teamB,
+    court: pickRandomCourt(), // lapangan acak untuk match ini
+  };
 
   const fill = (ulId, team) => {
     const ul = document.getElementById(ulId);
@@ -424,9 +575,10 @@ function showPreview(match) {
   fill("team-a-list", match.teamA);
   fill("team-b-list", match.teamB);
 
-  // Tampilkan total poin tiap tim di judulnya.
+  // Tampilkan total poin tiap tim + lapangan di judulnya.
+  const courtLabel = pendingMatch.court ? ` — ${pendingMatch.court}` : "";
   document.querySelector("#match-preview .team-a h3").textContent =
-    `Tim A (${teamPoints(match.teamA)} poin)`;
+    `Tim A (${teamPoints(match.teamA)} poin)${courtLabel}`;
   document.querySelector("#match-preview .team-b h3").textContent =
     `Tim B (${teamPoints(match.teamB)} poin)`;
 
@@ -468,13 +620,19 @@ function doRandom() {
 }
 
 /** Simpan satu match (array id) ke tabel + perbarui tampilan. */
-function commitMatch(teamAIds, teamBIds) {
+function commitMatch(teamAIds, teamBIds, court) {
   const now = new Date();
   const time = now.toLocaleString("id-ID", {
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
-  state.matches.push({ id: uid(), teamA: teamAIds, teamB: teamBIds, time });
+  state.matches.push({
+    id: uid(),
+    teamA: teamAIds,
+    teamB: teamBIds,
+    court: court || null,
+    time,
+  });
   save();
   renderMatches();
   renderPlayers(); // perbarui hitungan "sudah berapa kali main"
@@ -484,7 +642,8 @@ function saveMatch() {
   if (!pendingMatch) return;
   commitMatch(
     pendingMatch.teamA.map((p) => p.id),
-    pendingMatch.teamB.map((p) => p.id)
+    pendingMatch.teamB.map((p) => p.id),
+    pendingMatch.court
   );
   hidePreview();
   showMsg(
@@ -562,7 +721,7 @@ function addManualMatch() {
     if (!ok) return;
   }
 
-  commitMatch(teamA, teamB);
+  commitMatch(teamA, teamB, pickRandomCourt());
   clearManualSelects();
   showMsg(msg, "Match manual ditambahkan ke tabel.", "success");
 }
@@ -592,11 +751,12 @@ function resetMatches() {
 }
 
 function resetAll() {
-  if (!confirm("Hapus SEMUA data (pemain + match)? Tindakan ini tidak bisa dibatalkan.")) return;
-  state = { players: [], matches: [] };
+  if (!confirm("Hapus SEMUA data (pemain + match + lapangan)? Tindakan ini tidak bisa dibatalkan.")) return;
+  state = { players: [], matches: [], courts: [] };
   save();
   renderPlayers();
   renderMatches();
+  renderCourts();
   hidePreview();
 }
 
@@ -605,6 +765,7 @@ function init() {
   load();
   renderPlayers();
   renderMatches();
+  renderCourts();
 
   document.getElementById("player-form").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -613,6 +774,15 @@ function init() {
     if (addPlayer(nameInput.value, levelInput.value)) {
       nameInput.value = "";
       nameInput.focus();
+    }
+  });
+
+  document.getElementById("court-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = document.getElementById("court-name");
+    if (addCourt(input.value)) {
+      input.value = "";
+      input.focus();
     }
   });
 

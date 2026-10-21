@@ -63,8 +63,10 @@
         <button id="random-btn" class="btn btn-accent">🎲 Random 4 Pemain</button>
       </div>
       <p class="hint">
-        1 match = 4 pemain → 2 tim seimbang (tiap tim 2 level berbeda).
-        Pemain yang sudah pernah satu tim tidak akan dipasangkan lagi.
+        1 match = 4 pemain → 2 tim seimbang berdasarkan poin level
+        (Beginner 1, Beginner Plus 2, Intermediate 3). Pemain yang baru main
+        istirahat 3 match dulu. Lapangan diberikan acak. Aturan dilonggarkan
+        bertahap jika perlu, lalu kembali ketat saat memungkinkan.
       </p>
       <p id="random-message" class="form-message"></p>
 
@@ -83,6 +85,29 @@
         <button id="save-match-btn" class="btn btn-primary">✓ Simpan Match</button>
         <button id="reroll-btn" class="btn btn-ghost">↻ Acak Lagi</button>
       </div>
+    </section>
+
+    <!-- ====== LAPANGAN (COURTS) ====== -->
+    <section class="card">
+      <div class="section-head">
+        <h2>Lapangan (Court)</h2>
+        <span id="court-count" class="pill">0 lapangan</span>
+      </div>
+      <p class="hint">
+        Saat acak, setiap match diberi lapangan acak dari daftar ini.
+      </p>
+      <form id="court-form" class="player-form">
+        <input
+          type="text"
+          id="court-name"
+          placeholder="Nama lapangan (mis. Lapangan 1)"
+          autocomplete="off"
+          required
+        />
+        <button type="submit" class="btn btn-primary">Tambah Lapangan</button>
+      </form>
+      <p id="court-message" class="form-message"></p>
+      <ul id="court-list" class="court-list"></ul>
     </section>
 
     <!-- ====== ADD MATCH MANUAL ====== -->
@@ -123,6 +148,7 @@
           <thead>
             <tr>
               <th>#</th>
+              <th>Lapangan</th>
               <th>Tim A</th>
               <th>Tim B</th>
               <th>Waktu</th>
