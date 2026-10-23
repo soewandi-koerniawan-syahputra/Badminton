@@ -119,10 +119,29 @@ function buildRestingPlayers(n) {
   return resting;
 }
 
-/** Pilih satu nama lapangan secara acak, atau null jika belum ada lapangan. */
-function pickRandomCourt() {
+/**
+ * Lapangan berikutnya dengan rotasi round-robin mengikuti urutan daftar
+ * lapangan. Court diambil setelah court match terakhir (melingkar).
+ * Contoh 3 lapangan [6,7,8]: 6 -> 7 -> 8 -> 6 -> ...
+ * Jika belum ada match atau court terakhir sudah dihapus, mulai dari yang pertama.
+ */
+function pickNextCourt() {
   if (state.courts.length === 0) return null;
-  return shuffle(state.courts)[0].name;
+
+  // Cari court dari match terakhir yang punya court.
+  let lastCourt = null;
+  for (let i = state.matches.length - 1; i >= 0; i--) {
+    if (state.matches[i].court) {
+      lastCourt = state.matches[i].court;
+      break;
+    }
+  }
+
+  if (lastCourt === null) return state.courts[0].name;
+
+  const idx = state.courts.findIndex((c) => c.name === lastCourt);
+  if (idx === -1) return state.courts[0].name; // court lama sudah dihapus
+  return state.courts[(idx + 1) % state.courts.length].name;
 }
 
 /* ---------------- Rendering: Players ---------------- */
@@ -165,6 +184,20 @@ function renderPlayers() {
         count.title = `Sudah main ${plays} kali`;
         count.textContent = `🏸 ${plays}×`;
 
+        const levelSelect = document.createElement("select");
+        levelSelect.className = "player-level-select";
+        levelSelect.title = "Ubah level pemain";
+        for (const lv of LEVELS) {
+          const opt = document.createElement("option");
+          opt.value = lv;
+          opt.textContent = lv;
+          if (lv === p.level) opt.selected = true;
+          levelSelect.appendChild(opt);
+        }
+        levelSelect.addEventListener("change", () =>
+          changePlayerLevel(p.id, levelSelect.value)
+        );
+
         const btn = document.createElement("button");
         btn.className = "remove-player";
         btn.title = "Hapus pemain";
@@ -174,6 +207,7 @@ function renderPlayers() {
         const right = document.createElement("span");
         right.className = "player-meta";
         right.appendChild(count);
+        right.appendChild(levelSelect);
         right.appendChild(btn);
 
         li.appendChild(name);
@@ -326,6 +360,15 @@ function removePlayer(id) {
   if (!p) return;
   if (!confirm(`Hapus pemain "${p.name}"?`)) return;
   state.players = state.players.filter((x) => x.id !== id);
+  save();
+  renderPlayers();
+}
+
+/** Ubah level seorang pemain (mis. koreksi level pemain baru). */
+function changePlayerLevel(id, newLevel) {
+  const p = playerById(id);
+  if (!p || !LEVELS.includes(newLevel) || p.level === newLevel) return;
+  p.level = newLevel;
   save();
   renderPlayers();
 }
@@ -559,7 +602,7 @@ function showPreview(match) {
   pendingMatch = {
     teamA: match.teamA,
     teamB: match.teamB,
-    court: pickRandomCourt(), // lapangan acak untuk match ini
+    court: pickNextCourt(), // lapangan berikutnya (rotasi round-robin)
   };
 
   const fill = (ulId, team) => {
@@ -721,7 +764,7 @@ function addManualMatch() {
     if (!ok) return;
   }
 
-  commitMatch(teamA, teamB, pickRandomCourt());
+  commitMatch(teamA, teamB, pickNextCourt());
   clearManualSelects();
   showMsg(msg, "Match manual ditambahkan ke tabel.", "success");
 }

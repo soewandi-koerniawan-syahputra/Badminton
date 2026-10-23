@@ -209,6 +209,16 @@ body {
   border-radius: 999px;
   white-space: nowrap;
 }
+.player-level-select {
+  font-size: 0.72rem;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 4px;
+  max-width: 120px;
+}
+.player-level-select:focus { outline: none; border-color: var(--primary); }
 .level-col .empty {
   color: var(--muted);
   font-style: italic;
