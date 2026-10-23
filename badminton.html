@@ -216,6 +216,16 @@ body {
   border-radius: 999px;
   white-space: nowrap;
 }
+.player-level-select {
+  font-size: 0.72rem;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 4px;
+  max-width: 120px;
+}
+.player-level-select:focus { outline: none; border-color: var(--primary); }
 .level-col .empty {
   color: var(--muted);
   font-style: italic;
@@ -321,6 +331,72 @@ body {
   .manual-grid { grid-template-columns: 1fr; }
 }
 
+/* ---------- Courts ---------- */
+.court-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.court-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 6px 6px 14px;
+  font-size: 0.9rem;
+}
+.court-list .empty {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-style: italic;
+  padding: 6px 0;
+}
+.court-list .remove-court {
+  background: transparent;
+  border: none;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+.court-list .remove-court:hover { background: rgba(239,68,68,0.15); }
+
+/* ---------- Court cell + copy button in match table ---------- */
+.court-tag {
+  display: inline-block;
+  background: rgba(59,130,246,0.15);
+  border: 1px solid var(--primary);
+  color: #cfe0ff;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.copy-match {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.82rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  margin-right: 6px;
+}
+.copy-match:hover { background: var(--card-2); }
+.copy-match.copied {
+  border-color: var(--accent);
+  color: #86efac;
+}
+
 /* ---------- Match table ---------- */
 .table-wrap { overflow-x: auto; }
 .match-table {
@@ -419,7 +495,8 @@ body {
       </div>
       <p class="hint">
         1 match = 4 pemain → 2 tim seimbang berdasarkan poin level
-        (Beginner 1, Beginner Plus 2, Intermediate 3). Aturan dilonggarkan
+        (Beginner 1, Beginner Plus 2, Intermediate 3). Pemain yang baru main
+        istirahat 3 match dulu. Lapangan diberikan acak. Aturan dilonggarkan
         bertahap jika perlu, lalu kembali ketat saat memungkinkan.
       </p>
       <p id="random-message" class="form-message"></p>
@@ -439,6 +516,29 @@ body {
         <button id="save-match-btn" class="btn btn-primary">✓ Simpan Match</button>
         <button id="reroll-btn" class="btn btn-ghost">↻ Acak Lagi</button>
       </div>
+    </section>
+
+    <!-- ====== LAPANGAN (COURTS) ====== -->
+    <section class="card">
+      <div class="section-head">
+        <h2>Lapangan (Court)</h2>
+        <span id="court-count" class="pill">0 lapangan</span>
+      </div>
+      <p class="hint">
+        Saat acak, setiap match diberi lapangan acak dari daftar ini.
+      </p>
+      <form id="court-form" class="player-form">
+        <input
+          type="text"
+          id="court-name"
+          placeholder="Nama lapangan (mis. Lapangan 1)"
+          autocomplete="off"
+          required
+        />
+        <button type="submit" class="btn btn-primary">Tambah Lapangan</button>
+      </form>
+      <p id="court-message" class="form-message"></p>
+      <ul id="court-list" class="court-list"></ul>
     </section>
 
     <!-- ====== ADD MATCH MANUAL ====== -->
@@ -479,6 +579,7 @@ body {
           <thead>
             <tr>
               <th>#</th>
+              <th>Lapangan</th>
               <th>Tim A</th>
               <th>Tim B</th>
               <th>Waktu</th>
@@ -519,7 +620,10 @@ const LEVEL_POINTS = {
   "Intermediate": 3,
 };
 
-let state = { players: [], matches: [] };
+/** Lama istirahat: pemain yang baru main harus duduk 3 match sebelum boleh lagi. */
+const REST_MATCHES = 3;
+
+let state = { players: [], matches: [], courts: [] };
 let pendingMatch = null;
 
 /* ---------------- Persistence ---------------- */
@@ -532,6 +636,7 @@ function load() {
   }
   if (!Array.isArray(state.players)) state.players = [];
   if (!Array.isArray(state.matches)) state.matches = [];
+  if (!Array.isArray(state.courts)) state.courts = [];
 }
 
 function save() {
@@ -584,6 +689,45 @@ function buildPlayCounts() {
   return counts;
 }
 
+/**
+ * Kumpulan id pemain yang sedang "istirahat": mereka yang ikut bermain
+ * dalam `n` match terakhir. Pemain ini diprioritaskan untuk TIDAK dipilih
+ * di match berikutnya, supaya tidak langsung main lagi berturut-turut.
+ */
+function buildRestingPlayers(n) {
+  const resting = new Set();
+  const recent = state.matches.slice(-n);
+  for (const m of recent) {
+    for (const id of [...m.teamA, ...m.teamB]) resting.add(id);
+  }
+  return resting;
+}
+
+/**
+ * Lapangan berikutnya dengan rotasi round-robin mengikuti urutan daftar
+ * lapangan. Court diambil setelah court match terakhir (melingkar).
+ * Contoh 3 lapangan [6,7,8]: 6 -> 7 -> 8 -> 6 -> ...
+ * Jika belum ada match atau court terakhir sudah dihapus, mulai dari yang pertama.
+ */
+function pickNextCourt() {
+  if (state.courts.length === 0) return null;
+
+  // Cari court dari match terakhir yang punya court.
+  let lastCourt = null;
+  for (let i = state.matches.length - 1; i >= 0; i--) {
+    if (state.matches[i].court) {
+      lastCourt = state.matches[i].court;
+      break;
+    }
+  }
+
+  if (lastCourt === null) return state.courts[0].name;
+
+  const idx = state.courts.findIndex((c) => c.name === lastCourt);
+  if (idx === -1) return state.courts[0].name; // court lama sudah dihapus
+  return state.courts[(idx + 1) % state.courts.length].name;
+}
+
 /* ---------------- Rendering: Players ---------------- */
 function renderPlayers() {
   const grid = document.getElementById("levels-grid");
@@ -624,6 +768,20 @@ function renderPlayers() {
         count.title = `Sudah main ${plays} kali`;
         count.textContent = `🏸 ${plays}×`;
 
+        const levelSelect = document.createElement("select");
+        levelSelect.className = "player-level-select";
+        levelSelect.title = "Ubah level pemain";
+        for (const lv of LEVELS) {
+          const opt = document.createElement("option");
+          opt.value = lv;
+          opt.textContent = lv;
+          if (lv === p.level) opt.selected = true;
+          levelSelect.appendChild(opt);
+        }
+        levelSelect.addEventListener("change", () =>
+          changePlayerLevel(p.id, levelSelect.value)
+        );
+
         const btn = document.createElement("button");
         btn.className = "remove-player";
         btn.title = "Hapus pemain";
@@ -633,6 +791,7 @@ function renderPlayers() {
         const right = document.createElement("span");
         right.className = "player-meta";
         right.appendChild(count);
+        right.appendChild(levelSelect);
         right.appendChild(btn);
 
         li.appendChild(name);
@@ -667,26 +826,87 @@ function renderMatches() {
   tbody.innerHTML = "";
 
   if (state.matches.length === 0) {
-    tbody.innerHTML = `<tr class="empty-row"><td colspan="5">Belum ada match tercatat</td></tr>`;
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="6">Belum ada match tercatat</td></tr>`;
   } else {
     state.matches.forEach((m, idx) => {
       const tr = document.createElement("tr");
+      const courtHtml = m.court
+        ? `<span class="court-tag">${escapeHtml(m.court)}</span>`
+        : `<span class="court-tag" style="opacity:.5;border-style:dashed">-</span>`;
       tr.innerHTML = `
         <td>${idx + 1}</td>
+        <td>${courtHtml}</td>
         <td class="team-cell">${teamCellHtml(m.teamA)}</td>
         <td class="team-cell">${teamCellHtml(m.teamB)}</td>
         <td>${m.time}</td>
-        <td><button class="delete-match" data-id="${m.id}">Hapus</button></td>
+        <td>
+          <button class="copy-match" data-id="${m.id}">Copy</button>
+          <button class="delete-match" data-id="${m.id}">Hapus</button>
+        </td>
       `;
       tbody.appendChild(tr);
     });
     tbody.querySelectorAll(".delete-match").forEach((btn) => {
       btn.addEventListener("click", () => deleteMatch(btn.dataset.id));
     });
+    tbody.querySelectorAll(".copy-match").forEach((btn) => {
+      btn.addEventListener("click", () => copyMatch(btn.dataset.id, btn));
+    });
   }
 
   document.getElementById("match-count").textContent =
     `${state.matches.length} match`;
+}
+
+/** Teks match untuk disalin: hanya lapangan + nama pemain, tanpa level. */
+function matchCopyText(m) {
+  const names = (ids) =>
+    ids.map((id) => (playerById(id) ? playerById(id).name : "(dihapus)")).join(" & ");
+  const lines = [];
+  if (m.court) lines.push(m.court);
+  lines.push(names(m.teamA));
+  lines.push("vs");
+  lines.push(names(m.teamB));
+  return lines.join("\n");
+}
+
+/** Salin teks match ke clipboard, dengan fallback bila clipboard API tak ada. */
+function copyMatch(id, btn) {
+  const m = state.matches.find((x) => x.id === id);
+  if (!m) return;
+  const text = matchCopyText(m);
+
+  const markCopied = () => {
+    const old = btn.textContent;
+    btn.textContent = "Tersalin ✓";
+    btn.classList.add("copied");
+    setTimeout(() => {
+      btn.textContent = old;
+      btn.classList.remove("copied");
+    }, 1500);
+  };
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(markCopied).catch(() => fallbackCopy(text, markCopied));
+  } else {
+    fallbackCopy(text, markCopied);
+  }
+}
+
+function fallbackCopy(text, onDone) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand("copy");
+    if (onDone) onDone();
+  } catch (e) {
+    alert("Gagal menyalin otomatis. Teks:\n\n" + text);
+  }
+  document.body.removeChild(ta);
 }
 
 function escapeHtml(str) {
@@ -728,6 +948,72 @@ function removePlayer(id) {
   renderPlayers();
 }
 
+/** Ubah level seorang pemain (mis. koreksi level pemain baru). */
+function changePlayerLevel(id, newLevel) {
+  const p = playerById(id);
+  if (!p || !LEVELS.includes(newLevel) || p.level === newLevel) return;
+  p.level = newLevel;
+  save();
+  renderPlayers();
+}
+
+/* ---------------- Actions: Courts (Lapangan) ---------------- */
+function renderCourts() {
+  const ul = document.getElementById("court-list");
+  ul.innerHTML = "";
+
+  if (state.courts.length === 0) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "Belum ada lapangan. Match akan tampil tanpa lapangan.";
+    ul.appendChild(li);
+  } else {
+    for (const c of state.courts) {
+      const li = document.createElement("li");
+      const name = document.createElement("span");
+      name.textContent = c.name;
+      const btn = document.createElement("button");
+      btn.className = "remove-court";
+      btn.title = "Hapus lapangan";
+      btn.textContent = "✕";
+      btn.addEventListener("click", () => removeCourt(c.id));
+      li.appendChild(name);
+      li.appendChild(btn);
+      ul.appendChild(li);
+    }
+  }
+
+  document.getElementById("court-count").textContent =
+    `${state.courts.length} lapangan`;
+}
+
+function addCourt(name) {
+  name = name.trim();
+  const msg = document.getElementById("court-message");
+  if (!name) {
+    showMsg(msg, "Nama lapangan tidak boleh kosong.", "error");
+    return false;
+  }
+  if (state.courts.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+    showMsg(msg, `Lapangan "${name}" sudah ada.`, "error");
+    return false;
+  }
+  state.courts.push({ id: uid(), name });
+  save();
+  renderCourts();
+  showMsg(msg, `Lapangan "${name}" ditambahkan.`, "success");
+  return true;
+}
+
+function removeCourt(id) {
+  const c = state.courts.find((x) => x.id === id);
+  if (!c) return;
+  if (!confirm(`Hapus lapangan "${c.name}"?`)) return;
+  state.courts = state.courts.filter((x) => x.id !== id);
+  save();
+  renderCourts();
+}
+
 /* ---------------- Random Match Logic ---------------- */
 function teamPoints(team) {
   return team.reduce((sum, p) => sum + (LEVEL_POINTS[p.level] || 0), 0);
@@ -763,19 +1049,48 @@ function generateMatch() {
   }
 
   const past = buildPastPartners();
-  const playCounts = buildPlayCounts();
+  const resting = buildRestingPlayers(REST_MATCHES);
 
-  const minPlays = Math.min(...state.players.map((p) => playCounts[p.id] || 0));
-  const eligible = state.players.filter(
+  // Coba dulu dengan aturan istirahat (pemain yang baru main dikecualikan).
+  // Jika tidak ada cukup pemain untuk membentuk match, ulangi TANPA aturan
+  // istirahat (ignore) supaya match tetap bisa dibuat.
+  let result = searchMatch(past, resting);
+  if (result) return result;
+
+  result = searchMatch(past, new Set()); // tanpa pengecualian istirahat
+  if (result) {
+    if (result.relaxed.indexOf("istirahat pemain") === -1) {
+      result.relaxed = ["istirahat pemain", ...result.relaxed];
+    }
+    return result;
+  }
+
+  return {
+    error:
+      "Tidak ada kombinasi 4 pemain yang bisa dibentuk sama sekali. " +
+      "Pastikan ada minimal 4 pemain terdaftar.",
+  };
+}
+
+/**
+ * Jalankan pencarian match bertahap pada kumpulan pemain yang BUKAN sedang
+ * istirahat (resting dikecualikan). Mengembalikan objek match atau null.
+ */
+function searchMatch(past, resting) {
+  const available = state.players.filter((p) => !resting.has(p.id));
+  if (available.length < 4) return null;
+
+  const playCounts = buildPlayCounts();
+  const minPlays = Math.min(...available.map((p) => playCounts[p.id] || 0));
+  const eligible = available.filter(
     (p) => (playCounts[p.id] || 0) === minPlays
   );
-  const everyone = state.players;
 
   const stages = [
     { pool: eligible, rules: { balanced: true, noRepeatPartner: true }, relaxed: [] },
     { pool: eligible, rules: { balanced: false, noRepeatPartner: true }, relaxed: ["keseimbangan level"] },
     { pool: eligible, rules: { balanced: false, noRepeatPartner: false }, relaxed: ["keseimbangan level", "tanpa partner berulang"] },
-    { pool: everyone, rules: { balanced: false, noRepeatPartner: false }, relaxed: ["keseimbangan level", "tanpa partner berulang", "pemerataan giliran"] },
+    { pool: available, rules: { balanced: false, noRepeatPartner: false }, relaxed: ["keseimbangan level", "tanpa partner berulang", "pemerataan giliran"] },
   ];
 
   for (const stage of stages) {
@@ -787,15 +1102,10 @@ function generateMatch() {
       teamA: best.teamA,
       teamB: best.teamB,
       note: best.balanced ? "seimbang" : "tidak-seimbang",
-      relaxed: stage.relaxed,
+      relaxed: stage.relaxed.slice(),
     };
   }
-
-  return {
-    error:
-      "Tidak ada kombinasi 4 pemain yang bisa dibentuk sama sekali. " +
-      "Pastikan ada minimal 4 pemain terdaftar.",
-  };
+  return null;
 }
 
 function pickBestCandidate(candidates) {
@@ -839,7 +1149,11 @@ function teamSplits(four) {
 
 /* ---------------- Match preview & save ---------------- */
 function showPreview(match) {
-  pendingMatch = { teamA: match.teamA, teamB: match.teamB };
+  pendingMatch = {
+    teamA: match.teamA,
+    teamB: match.teamB,
+    court: pickNextCourt(), // lapangan berikutnya (rotasi round-robin)
+  };
 
   const fill = (ulId, team) => {
     const ul = document.getElementById(ulId);
@@ -854,8 +1168,9 @@ function showPreview(match) {
   fill("team-a-list", match.teamA);
   fill("team-b-list", match.teamB);
 
+  const courtLabel = pendingMatch.court ? ` — ${pendingMatch.court}` : "";
   document.querySelector("#match-preview .team-a h3").textContent =
-    `Tim A (${teamPoints(match.teamA)} poin)`;
+    `Tim A (${teamPoints(match.teamA)} poin)${courtLabel}`;
   document.querySelector("#match-preview .team-b h3").textContent =
     `Tim B (${teamPoints(match.teamB)} poin)`;
 
@@ -894,13 +1209,19 @@ function doRandom() {
   showPreview(result);
 }
 
-function commitMatch(teamAIds, teamBIds) {
+function commitMatch(teamAIds, teamBIds, court) {
   const now = new Date();
   const time = now.toLocaleString("id-ID", {
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
-  state.matches.push({ id: uid(), teamA: teamAIds, teamB: teamBIds, time });
+  state.matches.push({
+    id: uid(),
+    teamA: teamAIds,
+    teamB: teamBIds,
+    court: court || null,
+    time,
+  });
   save();
   renderMatches();
   renderPlayers();
@@ -910,7 +1231,8 @@ function saveMatch() {
   if (!pendingMatch) return;
   commitMatch(
     pendingMatch.teamA.map((p) => p.id),
-    pendingMatch.teamB.map((p) => p.id)
+    pendingMatch.teamB.map((p) => p.id),
+    pendingMatch.court
   );
   hidePreview();
   showMsg(
@@ -983,7 +1305,7 @@ function addManualMatch() {
     if (!ok) return;
   }
 
-  commitMatch(teamA, teamB);
+  commitMatch(teamA, teamB, pickNextCourt());
   clearManualSelects();
   showMsg(msg, "Match manual ditambahkan ke tabel.", "success");
 }
@@ -1013,11 +1335,12 @@ function resetMatches() {
 }
 
 function resetAll() {
-  if (!confirm("Hapus SEMUA data (pemain + match)? Tindakan ini tidak bisa dibatalkan.")) return;
-  state = { players: [], matches: [] };
+  if (!confirm("Hapus SEMUA data (pemain + match + lapangan)? Tindakan ini tidak bisa dibatalkan.")) return;
+  state = { players: [], matches: [], courts: [] };
   save();
   renderPlayers();
   renderMatches();
+  renderCourts();
   hidePreview();
 }
 
@@ -1026,6 +1349,7 @@ function init() {
   load();
   renderPlayers();
   renderMatches();
+  renderCourts();
 
   document.getElementById("player-form").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -1034,6 +1358,15 @@ function init() {
     if (addPlayer(nameInput.value, levelInput.value)) {
       nameInput.value = "";
       nameInput.focus();
+    }
+  });
+
+  document.getElementById("court-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = document.getElementById("court-name");
+    if (addCourt(input.value)) {
+      input.value = "";
+      input.focus();
     }
   });
 
