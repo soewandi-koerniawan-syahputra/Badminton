@@ -13,6 +13,7 @@
   --beginner: #38bdf8;
   --beginner-plus: #a78bfa;
   --intermediate: #f59e0b;
+  --pic: #ec4899;
   --radius: 12px;
 }
 
@@ -171,6 +172,8 @@ body {
 .level-Beginner .level-col-head { background: var(--beginner); }
 .level-BeginnerPlus .level-col-head { background: var(--beginner-plus); }
 .level-Intermediate .level-col-head { background: var(--intermediate); }
+.level-PIC .level-col-head { background: var(--pic); color: #fff; }
+.level-PIC { border-color: var(--pic); }
 
 .level-col ul {
   list-style: none;
@@ -313,6 +316,7 @@ body {
 .badge-Beginner { background: var(--beginner); }
 .badge-BeginnerPlus { background: var(--beginner-plus); }
 .badge-Intermediate { background: var(--intermediate); }
+.badge-PIC { background: var(--pic); color: #fff; }
 
 .match-confirm {
   display: flex;
@@ -473,4 +477,26 @@ body {
 @media (max-width: 560px) {
   .match-preview { grid-template-columns: 1fr; }
   .vs { padding: 6px 0; }
+
+  /* Daftar pemain: susun tiap baris jadi dua tingkat supaya muat di HP. */
+  .levels-grid { grid-template-columns: 1fr; }
+  .level-col li {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .player-name {
+    white-space: normal;      /* nama panjang boleh turun baris, tak terpotong */
+    overflow: visible;
+    font-weight: 600;
+  }
+  .player-meta {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .player-level-select,
+  .player-paid-select {
+    flex: 1 1 auto;
+    max-width: none;          /* dropdown boleh melebar mengisi ruang */
+  }
 }
