@@ -209,7 +209,8 @@ body {
   border-radius: 999px;
   white-space: nowrap;
 }
-.player-level-select {
+.player-level-select,
+.player-paid-select {
   font-size: 0.72rem;
   color: var(--text);
   background: var(--card);
@@ -218,7 +219,41 @@ body {
   padding: 2px 4px;
   max-width: 120px;
 }
-.player-level-select:focus { outline: none; border-color: var(--primary); }
+.player-level-select:focus,
+.player-paid-select:focus { outline: none; border-color: var(--primary); }
+.player-paid-select.paid-lunas {
+  border-color: var(--accent);
+  color: #86efac;
+}
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.section-actions .btn { padding: 6px 12px; font-size: 0.82rem; }
+.edit-match, .save-edit-match, .cancel-edit-match {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.82rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  margin-right: 6px;
+}
+.edit-match:hover, .save-edit-match:hover, .cancel-edit-match:hover { background: var(--card-2); }
+.save-edit-match { border-color: var(--accent); color: #86efac; }
+.edit-p, .edit-court {
+  font-size: 0.82rem;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 6px;
+  margin: 2px 0;
+  width: 100%;
+}
 .level-col .empty {
   color: var(--muted);
   font-style: italic;

@@ -7,7 +7,15 @@
    - Tanpa partner berulang (pemain yang pernah 1 tim tak dipasang lagi)
    ========================================================= */
 
-const LEVELS = ["Beginner", "Beginner Plus", "Intermediate"];
+/** Semua level (termasuk PIC). Urutan ini dipakai untuk kolom & form. */
+const LEVELS = ["Beginner", "Beginner Plus", "Intermediate", "PIC"];
+
+/** Level yang ikut diacak otomatis (PIC dikecualikan — hanya manual). */
+const RANDOM_LEVELS = ["Beginner", "Beginner Plus", "Intermediate"];
+
+/** Status pembayaran. */
+const PAID_STATUSES = ["Belum", "Lunas"];
+
 const STORAGE_KEY = "badminton_data_v1";
 
 /** Poin tiap level untuk menilai keseimbangan tim (total poin tim harus sama). */
@@ -15,6 +23,7 @@ const LEVEL_POINTS = {
   "Beginner": 1,
   "Beginner Plus": 2,
   "Intermediate": 3,
+  "PIC": 0,
 };
 
 /** Lama istirahat: pemain yang baru main harus duduk 3 match sebelum boleh lagi. */
@@ -26,6 +35,7 @@ const REST_MATCHES = 3;
 
 /** @type {{players: Player[], matches: Match[], courts: Court[]}} */
 let state = { players: [], matches: [], courts: [] };
+let editingMatchId = null; // id match yang sedang diedit inline
 
 /** Pasangan tim dari match tersimpul, dipakai untuk cegah partner berulang. */
 let pendingMatch = null; // { teamA: Player[], teamB: Player[] }
@@ -41,6 +51,10 @@ function load() {
   if (!Array.isArray(state.players)) state.players = [];
   if (!Array.isArray(state.matches)) state.matches = [];
   if (!Array.isArray(state.courts)) state.courts = [];
+  // Migrasi: pemain lama tanpa status bayar dianggap "Belum".
+  for (const p of state.players) {
+    if (!p.paid) p.paid = "Belum";
+  }
 }
 
 function save() {
@@ -103,6 +117,76 @@ function buildPlayCounts() {
     }
   }
   return counts;
+}
+
+/**
+ * Jumlah main tiap pemain "sampai dengan" match ke-`uptoIndex` (inklusif).
+ * Dipakai untuk copy yang menampilkan angka historis (mis. Abi 1 lalu Abi 2).
+ */
+function buildPlayCountsUpTo(uptoIndex) {
+  const counts = {};
+  for (let i = 0; i <= uptoIndex && i < state.matches.length; i++) {
+    for (const id of [...state.matches[i].teamA, ...state.matches[i].teamB]) {
+      counts[id] = (counts[id] || 0) + 1;
+    }
+  }
+  return counts;
+}
+
+/** Nama pemain (atau "(dihapus)" bila sudah tidak ada). */
+function playerName(id) {
+  const p = playerById(id);
+  return p ? p.name : "(dihapus)";
+}
+
+/** Teks satu match dengan angka main "as of" match itu. */
+function matchCopyTextAt(matchIndex) {
+  const m = state.matches[matchIndex];
+  const counts = buildPlayCountsUpTo(matchIndex);
+  const side = (ids) =>
+    ids.map((id) => `${playerName(id)} ${counts[id] || 0}`).join(" & ");
+  const lines = [];
+  if (m.court) lines.push(m.court);
+  lines.push(side(m.teamA));
+  lines.push("vs");
+  lines.push(side(m.teamB));
+  return lines.join("\n");
+}
+
+/** Teks seluruh riwayat match (Match 1 .. N) untuk tombol Copy History. */
+function historyCopyText() {
+  if (state.matches.length === 0) return "Belum ada match.";
+  const blocks = state.matches.map((m, i) => {
+    const header = `Match ${i + 1}${m.court ? " — " + m.court : ""}`;
+    return `${header}\n${matchBodyAt(i)}`;
+  });
+  return blocks.join("\n\n");
+}
+
+/** Bagian isi (tanpa header) match ke-i dengan angka as-of-match. */
+function matchBodyAt(i) {
+  const m = state.matches[i];
+  const counts = buildPlayCountsUpTo(i);
+  const side = (ids) =>
+    ids.map((id) => `${playerName(id)} ${counts[id] || 0}`).join(" & ");
+  return `${side(m.teamA)}\nvs\n${side(m.teamB)}`;
+}
+
+/** Copy All: semua pemain NON-PIC + jumlah main (name count per baris). */
+function allPlayersCopyText() {
+  const counts = buildPlayCounts();
+  const rows = state.players
+    .filter((p) => p.level !== "PIC")
+    .map((p) => `${p.name} ${counts[p.id] || 0}`);
+  return rows.length ? rows.join("\n") : "Belum ada pemain.";
+}
+
+/** List: semua pemain NON-PIC + tanda bayar (✓ Lunas / ✗ Belum). */
+function paidListCopyText() {
+  const rows = state.players
+    .filter((p) => p.level !== "PIC")
+    .map((p) => `${p.name} ${p.paid === "Lunas" ? "✓" : "✗"}`);
+  return rows.length ? rows.join("\n") : "Belum ada pemain.";
 }
 
 /**
@@ -198,6 +282,21 @@ function renderPlayers() {
           changePlayerLevel(p.id, levelSelect.value)
         );
 
+        const paidSelect = document.createElement("select");
+        paidSelect.className = "player-paid-select";
+        paidSelect.title = "Status bayar";
+        for (const st of PAID_STATUSES) {
+          const opt = document.createElement("option");
+          opt.value = st;
+          opt.textContent = st;
+          if (st === (p.paid || "Belum")) opt.selected = true;
+          paidSelect.appendChild(opt);
+        }
+        paidSelect.classList.toggle("paid-lunas", (p.paid || "Belum") === "Lunas");
+        paidSelect.addEventListener("change", () =>
+          changePlayerPaid(p.id, paidSelect.value)
+        );
+
         const btn = document.createElement("button");
         btn.className = "remove-player";
         btn.title = "Hapus pemain";
@@ -208,6 +307,7 @@ function renderPlayers() {
         right.className = "player-meta";
         right.appendChild(count);
         right.appendChild(levelSelect);
+        right.appendChild(paidSelect);
         right.appendChild(btn);
 
         li.appendChild(name);
@@ -246,54 +346,144 @@ function renderMatches() {
   } else {
     state.matches.forEach((m, idx) => {
       const tr = document.createElement("tr");
-      const courtHtml = m.court
-        ? `<span class="court-tag">${escapeHtml(m.court)}</span>`
-        : `<span class="court-tag" style="opacity:.5;border-style:dashed">-</span>`;
-      tr.innerHTML = `
-        <td>${idx + 1}</td>
-        <td>${courtHtml}</td>
-        <td class="team-cell">${teamCellHtml(m.teamA)}</td>
-        <td class="team-cell">${teamCellHtml(m.teamB)}</td>
-        <td>${m.time}</td>
-        <td>
-          <button class="copy-match" data-id="${m.id}">Copy</button>
-          <button class="delete-match" data-id="${m.id}">Hapus</button>
-        </td>
-      `;
+      if (editingMatchId === m.id) {
+        tr.innerHTML = matchEditRowHtml(m, idx);
+      } else {
+        const courtHtml = m.court
+          ? `<span class="court-tag">${escapeHtml(m.court)}</span>`
+          : `<span class="court-tag" style="opacity:.5;border-style:dashed">-</span>`;
+        tr.innerHTML = `
+          <td>${idx + 1}</td>
+          <td>${courtHtml}</td>
+          <td class="team-cell">${teamCellHtml(m.teamA)}</td>
+          <td class="team-cell">${teamCellHtml(m.teamB)}</td>
+          <td>${m.time}</td>
+          <td>
+            <button class="copy-match" data-id="${m.id}">Copy</button>
+            <button class="edit-match" data-id="${m.id}">Edit</button>
+            <button class="delete-match" data-id="${m.id}">Hapus</button>
+          </td>
+        `;
+      }
       tbody.appendChild(tr);
     });
-    tbody.querySelectorAll(".delete-match").forEach((btn) => {
-      btn.addEventListener("click", () => deleteMatch(btn.dataset.id));
-    });
-    tbody.querySelectorAll(".copy-match").forEach((btn) => {
-      btn.addEventListener("click", () => copyMatch(btn.dataset.id, btn));
-    });
+    wireMatchRowButtons(tbody);
   }
 
   document.getElementById("match-count").textContent =
     `${state.matches.length} match`;
 }
 
-/** Teks match untuk disalin: hanya lapangan + nama pemain, tanpa level. */
-function matchCopyText(m) {
-  const names = (ids) =>
-    ids.map((id) => (playerById(id) ? playerById(id).name : "(dihapus)")).join(" & ");
-  const lines = [];
-  if (m.court) lines.push(m.court);
-  lines.push(names(m.teamA));
-  lines.push("vs");
-  lines.push(names(m.teamB));
-  return lines.join("\n");
+/** Pasang listener untuk tombol-tombol di tiap baris match. */
+function wireMatchRowButtons(tbody) {
+  tbody.querySelectorAll(".delete-match").forEach((btn) => {
+    btn.addEventListener("click", () => deleteMatch(btn.dataset.id));
+  });
+  tbody.querySelectorAll(".copy-match").forEach((btn) => {
+    btn.addEventListener("click", () => copyMatch(btn.dataset.id, btn));
+  });
+  tbody.querySelectorAll(".edit-match").forEach((btn) => {
+    btn.addEventListener("click", () => startEditMatch(btn.dataset.id));
+  });
+  tbody.querySelectorAll(".save-edit-match").forEach((btn) => {
+    btn.addEventListener("click", () => saveEditMatch(btn.dataset.id));
+  });
+  tbody.querySelectorAll(".cancel-edit-match").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      editingMatchId = null;
+      renderMatches();
+    });
+  });
 }
 
-/** Salin teks match ke clipboard, dengan fallback bila clipboard API tak ada. */
-function copyMatch(id, btn) {
+/** HTML baris match dalam mode edit (4 dropdown pemain + dropdown lapangan). */
+function matchEditRowHtml(m, idx) {
+  const opts = (selId) =>
+    state.players
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name, "id"))
+      .map(
+        (p) =>
+          `<option value="${p.id}" ${p.id === selId ? "selected" : ""}>${escapeHtml(p.name)} (${p.level})</option>`
+      )
+      .join("");
+  const courtOpts = () => {
+    let o = `<option value="" ${!m.court ? "selected" : ""}>-</option>`;
+    o += state.courts
+      .map(
+        (c) =>
+          `<option value="${escapeHtml(c.name)}" ${c.name === m.court ? "selected" : ""}>${escapeHtml(c.name)}</option>`
+      )
+      .join("");
+    return o;
+  };
+  return `
+    <td>${idx + 1}</td>
+    <td><select class="edit-court" data-id="${m.id}">${courtOpts()}</select></td>
+    <td>
+      <select class="edit-p edit-a1" data-id="${m.id}">${opts(m.teamA[0])}</select>
+      <select class="edit-p edit-a2" data-id="${m.id}">${opts(m.teamA[1])}</select>
+    </td>
+    <td>
+      <select class="edit-p edit-b1" data-id="${m.id}">${opts(m.teamB[0])}</select>
+      <select class="edit-p edit-b2" data-id="${m.id}">${opts(m.teamB[1])}</select>
+    </td>
+    <td>${m.time}</td>
+    <td>
+      <button class="save-edit-match" data-id="${m.id}">Simpan</button>
+      <button class="cancel-edit-match" data-id="${m.id}">Batal</button>
+    </td>
+  `;
+}
+
+function startEditMatch(id) {
+  editingMatchId = id;
+  renderMatches();
+}
+
+function saveEditMatch(id) {
   const m = state.matches.find((x) => x.id === id);
   if (!m) return;
-  const text = matchCopyText(m);
+  const val = (sel) => {
+    const el = document.querySelector(`.${sel}[data-id="${id}"]`);
+    return el ? el.value : null;
+  };
+  const a1 = val("edit-a1"), a2 = val("edit-a2");
+  const b1 = val("edit-b1"), b2 = val("edit-b2");
+  const court = val("edit-court");
 
+  const ids = [a1, a2, b1, b2];
+  if (ids.some((v) => !v)) {
+    alert("Semua 4 pemain harus dipilih.");
+    return;
+  }
+  if (new Set(ids).size !== 4) {
+    alert("Setiap pemain hanya boleh dipilih sekali.");
+    return;
+  }
+
+  m.teamA = [a1, a2];
+  m.teamB = [b1, b2];
+  m.court = court || null;
+  editingMatchId = null;
+  save();
+  renderMatches();
+  renderPlayers(); // jumlah main bisa berubah
+}
+
+/** Salin satu match (berdasarkan id) dengan angka main as-of-match. */
+function copyMatch(id, btn) {
+  const idx = state.matches.findIndex((x) => x.id === id);
+  if (idx === -1) return;
+  copyText(matchCopyTextAt(idx), btn);
+}
+
+/** Salin teks ke clipboard + umpan balik tombol, dengan fallback. */
+function copyText(text, btn) {
   const markCopied = () => {
-    const old = btn.textContent;
+    if (!btn) return;
+    const old = btn.dataset.label || btn.textContent;
+    btn.dataset.label = old;
     btn.textContent = "Tersalin ✓";
     btn.classList.add("copied");
     setTimeout(() => {
@@ -332,7 +522,7 @@ function escapeHtml(str) {
 }
 
 /* ---------------- Actions: Players ---------------- */
-function addPlayer(name, level) {
+function addPlayer(name, level, paid) {
   name = name.trim();
   const msg = document.getElementById("form-message");
 
@@ -348,10 +538,11 @@ function addPlayer(name, level) {
     return false;
   }
 
-  state.players.push({ id: uid(), name, level });
+  const paidStatus = PAID_STATUSES.includes(paid) ? paid : "Belum";
+  state.players.push({ id: uid(), name, level, paid: paidStatus });
   save();
   renderPlayers();
-  showMsg(msg, `"${name}" ditambahkan ke level ${level}.`, "success");
+  showMsg(msg, `"${name}" ditambahkan ke level ${level} (${paidStatus}).`, "success");
   return true;
 }
 
@@ -369,6 +560,15 @@ function changePlayerLevel(id, newLevel) {
   const p = playerById(id);
   if (!p || !LEVELS.includes(newLevel) || p.level === newLevel) return;
   p.level = newLevel;
+  save();
+  renderPlayers();
+}
+
+/** Ubah status bayar seorang pemain (Lunas / Belum). */
+function changePlayerPaid(id, newPaid) {
+  const p = playerById(id);
+  if (!p || !PAID_STATUSES.includes(newPaid) || p.paid === newPaid) return;
+  p.paid = newPaid;
   save();
   renderPlayers();
 }
@@ -488,8 +688,10 @@ function collectCandidates(pool, past, rules) {
  * @returns {{teamA:Player[], teamB:Player[], note?:string, relaxed?:string[]} | {error:string}}
  */
 function generateMatch() {
-  if (state.players.length < 4) {
-    return { error: "Butuh minimal 4 pemain untuk membuat match." };
+  // PIC tidak ikut diacak otomatis.
+  const randomizable = state.players.filter((p) => p.level !== "PIC");
+  if (randomizable.length < 4) {
+    return { error: "Butuh minimal 4 pemain (non-PIC) untuk membuat match." };
   }
 
   const past = buildPastPartners();
@@ -521,7 +723,10 @@ function generateMatch() {
  * istirahat (resting dikecualikan). Mengembalikan objek match atau null.
  */
 function searchMatch(past, resting) {
-  const available = state.players.filter((p) => !resting.has(p.id));
+  // Hanya pemain non-PIC yang bisa diacak otomatis.
+  const available = state.players.filter(
+    (p) => p.level !== "PIC" && !resting.has(p.id)
+  );
   if (available.length < 4) return null;
 
   const playCounts = buildPlayCounts();
@@ -814,11 +1019,22 @@ function init() {
     e.preventDefault();
     const nameInput = document.getElementById("player-name");
     const levelInput = document.getElementById("player-level");
-    if (addPlayer(nameInput.value, levelInput.value)) {
+    const paidInput = document.getElementById("player-paid");
+    if (addPlayer(nameInput.value, levelInput.value, paidInput.value)) {
       nameInput.value = "";
       nameInput.focus();
     }
   });
+
+  document.getElementById("copy-all-btn").addEventListener("click", (e) =>
+    copyText(allPlayersCopyText(), e.currentTarget)
+  );
+  document.getElementById("list-btn").addEventListener("click", (e) =>
+    copyText(paidListCopyText(), e.currentTarget)
+  );
+  document.getElementById("copy-history-btn").addEventListener("click", (e) =>
+    copyText(historyCopyText(), e.currentTarget)
+  );
 
   document.getElementById("court-form").addEventListener("submit", (e) => {
     e.preventDefault();

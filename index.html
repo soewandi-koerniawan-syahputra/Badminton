@@ -39,6 +39,11 @@
           <option value="Beginner">Beginner</option>
           <option value="Beginner Plus">Beginner Plus</option>
           <option value="Intermediate">Intermediate</option>
+          <option value="PIC">PIC</option>
+        </select>
+        <select id="player-paid" title="Status bayar">
+          <option value="Belum">Belum</option>
+          <option value="Lunas">Lunas</option>
         </select>
         <button type="submit" class="btn btn-primary">Tambah</button>
       </form>
@@ -49,7 +54,11 @@
     <section class="card">
       <div class="section-head">
         <h2>Daftar Pemain per Level</h2>
-        <span id="player-count" class="pill">0 pemain</span>
+        <span class="section-actions">
+          <span id="player-count" class="pill">0 pemain</span>
+          <button id="copy-all-btn" class="btn btn-ghost">Copy Main</button>
+          <button id="list-btn" class="btn btn-ghost">List</button>
+        </span>
       </div>
       <div class="levels-grid" id="levels-grid">
         <!-- diisi oleh JS -->
@@ -141,7 +150,10 @@
     <section class="card">
       <div class="section-head">
         <h2>Tabel Match</h2>
-        <span id="match-count" class="pill">0 match</span>
+        <span class="section-actions">
+          <span id="match-count" class="pill">0 match</span>
+          <button id="copy-history-btn" class="btn btn-ghost">Copy History</button>
+        </span>
       </div>
       <div class="table-wrap">
         <table class="match-table">
