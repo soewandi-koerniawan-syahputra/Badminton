@@ -1,7 +1,7 @@
 /* Service worker untuk Badminton Match Manager (PWA offline).
    Strategi: cache-first untuk aset inti, dengan fallback ke jaringan. */
 
-const CACHE_NAME = "badminton-pwa-v5";
+const CACHE_NAME = "badminton-pwa-v6";
 
 // Aset yang di-cache saat instalasi. Path relatif agar cocok dengan
 // GitHub Pages yang meng-host di subpath (/nama-repo/).
@@ -13,6 +13,7 @@ const ASSETS = [
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png",
+  "./ksbc.png",
 ];
 
 // Install: pra-cache semua aset inti.

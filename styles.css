@@ -36,6 +36,25 @@ body {
   font-size: 2rem;
   letter-spacing: 0.5px;
 }
+.header-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.header-logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+@media (max-width: 560px) {
+  .app-header h1 { font-size: 1.4rem; }
+  .header-logo { width: 42px; height: 42px; }
+  .header-title { gap: 10px; }
+}
 .subtitle {
   color: var(--muted);
   margin: 6px 0 0;
