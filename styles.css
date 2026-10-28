@@ -55,6 +55,12 @@ body {
   .header-logo { width: 42px; height: 42px; }
   .header-title { gap: 10px; }
 }
+.slogan {
+  font-weight: 800;
+  font-size: 1.05rem;
+  margin: 8px 0 0;
+  color: var(--text);
+}
 .subtitle {
   color: var(--muted);
   margin: 6px 0 0;
@@ -470,7 +476,14 @@ body {
   letter-spacing: 0.5px;
 }
 .match-table tbody tr:hover { background: rgba(255,255,255,0.02); }
-.team-cell span { display: block; }
+.team-cell span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 0;
+}
+.team-cell span .badge { flex-shrink: 0; }
 .delete-match {
   background: transparent;
   border: none;
