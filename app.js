@@ -183,7 +183,8 @@ function allPlayersCopyText() {
   const rows = state.players
     .filter((p) => p.level !== "PIC")
     .map((p) => `${p.name} ${counts[p.id] || 0}`);
-  return rows.length ? rows.join("\n") : "Belum ada pemain.";
+  const header = "List Jumlah Player Bermain";
+  return header + "\n" + (rows.length ? rows.join("\n") : "Belum ada pemain.");
 }
 
 /** List: semua pemain NON-PIC + tanda bayar (✓ Lunas / ✗ Belum). */
@@ -191,7 +192,8 @@ function paidListCopyText() {
   const rows = state.players
     .filter((p) => p.level !== "PIC")
     .map((p) => `${p.name} ${p.paid === "Lunas" ? "✓" : "✗"}`);
-  return rows.length ? rows.join("\n") : "Belum ada pemain.";
+  const header = "Pelunasan Mabar";
+  return header + "\n" + (rows.length ? rows.join("\n") : "Belum ada pemain.");
 }
 
 /**
@@ -344,7 +346,11 @@ function renderPlayers() {
   const hadirCount = state.players.filter(
     (p) => (p.attendance || "Hadir") === "Hadir"
   ).length;
-  document.getElementById("player-count").textContent = `${hadirCount} hadir`;
+  const hadirLunas = state.players.filter(
+    (p) => (p.attendance || "Hadir") === "Hadir" && p.paid === "Lunas"
+  ).length;
+  document.getElementById("player-count").textContent =
+    `${hadirCount} hadir · ${hadirLunas} lunas`;
 
   renderAbsentList();
   renderManualSelects(); // jaga dropdown match manual tetap sinkron
@@ -393,7 +399,10 @@ function renderAbsentList() {
   }
 
   const count = document.getElementById("absent-count");
-  if (count) count.textContent = `${absent.length} belum hadir`;
+  const absentLunas = absent.filter((p) => p.paid === "Lunas").length;
+  if (count) {
+    count.textContent = `${absent.length} belum hadir · ${absentLunas} lunas`;
+  }
 }
 
 /* ---------------- Rendering: Matches ---------------- */
