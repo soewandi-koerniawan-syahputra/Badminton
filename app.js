@@ -343,11 +343,15 @@ function renderPlayers() {
     grid.appendChild(col);
   }
 
+  // Hitung hanya pemain non-PIC yang hadir.
   const hadirCount = state.players.filter(
-    (p) => (p.attendance || "Hadir") === "Hadir"
+    (p) => p.level !== "PIC" && (p.attendance || "Hadir") === "Hadir"
   ).length;
   const hadirLunas = state.players.filter(
-    (p) => (p.attendance || "Hadir") === "Hadir" && p.paid === "Lunas"
+    (p) =>
+      p.level !== "PIC" &&
+      (p.attendance || "Hadir") === "Hadir" &&
+      p.paid === "Lunas"
   ).length;
   document.getElementById("player-count").textContent =
     `${hadirCount} hadir · ${hadirLunas} lunas`;
