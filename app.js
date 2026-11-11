@@ -16,6 +16,9 @@ const RANDOM_LEVELS = ["Beginner", "Beginner Plus", "Intermediate"];
 /** Status pembayaran. */
 const PAID_STATUSES = ["Belum", "Lunas"];
 
+/** Status kehadiran. Hanya yang "Hadir" tampil di daftar per level & ikut diacak. */
+const ATTENDANCE_STATUSES = ["Hadir", "Belum Hadir"];
+
 const STORAGE_KEY = "badminton_data_v1";
 
 /** Poin tiap level untuk menilai keseimbangan tim (total poin tim harus sama). */
@@ -54,6 +57,8 @@ function load() {
   // Migrasi: pemain lama tanpa status bayar dianggap "Belum".
   for (const p of state.players) {
     if (!p.paid) p.paid = "Belum";
+    // Pemain lama (sebelum fitur kehadiran) dianggap sudah hadir.
+    if (!p.attendance) p.attendance = "Hadir";
   }
 }
 
@@ -236,7 +241,10 @@ function renderPlayers() {
   const playCounts = buildPlayCounts();
 
   for (const level of LEVELS) {
-    const group = state.players.filter((p) => p.level === level);
+    // Hanya pemain yang sudah hadir tampil di daftar per level.
+    const group = state.players.filter(
+      (p) => p.level === level && (p.attendance || "Hadir") === "Hadir"
+    );
     const col = document.createElement("div");
     col.className = `level-col level-${levelClass(level)}`;
 
@@ -297,6 +305,20 @@ function renderPlayers() {
           changePlayerPaid(p.id, paidSelect.value)
         );
 
+        const attSelect = document.createElement("select");
+        attSelect.className = "player-att-select";
+        attSelect.title = "Status kehadiran";
+        for (const st of ATTENDANCE_STATUSES) {
+          const opt = document.createElement("option");
+          opt.value = st;
+          opt.textContent = st;
+          if (st === (p.attendance || "Hadir")) opt.selected = true;
+          attSelect.appendChild(opt);
+        }
+        attSelect.addEventListener("change", () =>
+          changePlayerAttendance(p.id, attSelect.value)
+        );
+
         const btn = document.createElement("button");
         btn.className = "remove-player";
         btn.title = "Hapus pemain";
@@ -308,6 +330,7 @@ function renderPlayers() {
         right.appendChild(count);
         right.appendChild(levelSelect);
         right.appendChild(paidSelect);
+        right.appendChild(attSelect);
         right.appendChild(btn);
 
         li.appendChild(name);
@@ -318,10 +341,59 @@ function renderPlayers() {
     grid.appendChild(col);
   }
 
-  document.getElementById("player-count").textContent =
-    `${state.players.length} pemain`;
+  const hadirCount = state.players.filter(
+    (p) => (p.attendance || "Hadir") === "Hadir"
+  ).length;
+  document.getElementById("player-count").textContent = `${hadirCount} hadir`;
 
+  renderAbsentList();
   renderManualSelects(); // jaga dropdown match manual tetap sinkron
+}
+
+/** Daftar pemain yang belum hadir: hanya nama + dropdown status kehadiran. */
+function renderAbsentList() {
+  const ul = document.getElementById("absent-list");
+  if (!ul) return;
+  ul.innerHTML = "";
+
+  const absent = state.players
+    .filter((p) => (p.attendance || "Hadir") === "Belum Hadir")
+    .sort((a, b) => a.name.localeCompare(b.name, "id"));
+
+  if (absent.length === 0) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "Semua pemain sudah hadir.";
+    ul.appendChild(li);
+  } else {
+    for (const p of absent) {
+      const li = document.createElement("li");
+      const name = document.createElement("span");
+      name.className = "player-name";
+      name.textContent = p.name;
+
+      const sel = document.createElement("select");
+      sel.className = "player-att-select absent";
+      sel.title = "Ubah jadi Hadir";
+      for (const st of ["Belum Hadir", "Hadir"]) {
+        const opt = document.createElement("option");
+        opt.value = st;
+        opt.textContent = st;
+        if (st === "Belum Hadir") opt.selected = true;
+        sel.appendChild(opt);
+      }
+      sel.addEventListener("change", () =>
+        changePlayerAttendance(p.id, sel.value)
+      );
+
+      li.appendChild(name);
+      li.appendChild(sel);
+      ul.appendChild(li);
+    }
+  }
+
+  const count = document.getElementById("absent-count");
+  if (count) count.textContent = `${absent.length} belum hadir`;
 }
 
 /* ---------------- Rendering: Matches ---------------- */
@@ -522,7 +594,7 @@ function escapeHtml(str) {
 }
 
 /* ---------------- Actions: Players ---------------- */
-function addPlayer(name, level, paid) {
+function addPlayer(name, level, paid, attendance) {
   name = name.trim();
   const msg = document.getElementById("form-message");
 
@@ -539,7 +611,8 @@ function addPlayer(name, level, paid) {
   }
 
   const paidStatus = PAID_STATUSES.includes(paid) ? paid : "Belum";
-  state.players.push({ id: uid(), name, level, paid: paidStatus });
+  const attStatus = ATTENDANCE_STATUSES.includes(attendance) ? attendance : "Hadir";
+  state.players.push({ id: uid(), name, level, paid: paidStatus, attendance: attStatus });
   save();
   renderPlayers();
   showMsg(msg, `"${name}" ditambahkan ke level ${level} (${paidStatus}).`, "success");
@@ -560,6 +633,16 @@ function changePlayerLevel(id, newLevel) {
   const p = playerById(id);
   if (!p || !LEVELS.includes(newLevel) || p.level === newLevel) return;
   p.level = newLevel;
+  save();
+  renderPlayers();
+}
+
+/** Ubah status kehadiran (Hadir / Belum Hadir). Memindahkan pemain antar daftar. */
+function changePlayerAttendance(id, newStatus) {
+  const p = playerById(id);
+  if (!p || !ATTENDANCE_STATUSES.includes(newStatus)) return;
+  if ((p.attendance || "Hadir") === newStatus) return;
+  p.attendance = newStatus;
   save();
   renderPlayers();
 }
@@ -689,7 +772,9 @@ function collectCandidates(pool, past, rules) {
  */
 function generateMatch() {
   // PIC tidak ikut diacak otomatis.
-  const randomizable = state.players.filter((p) => p.level !== "PIC");
+  const randomizable = state.players.filter(
+    (p) => p.level !== "PIC" && (p.attendance || "Hadir") === "Hadir"
+  );
   if (randomizable.length < 4) {
     return { error: "Butuh minimal 4 pemain (non-PIC) untuk membuat match." };
   }
@@ -725,7 +810,10 @@ function generateMatch() {
 function searchMatch(past, resting) {
   // Hanya pemain non-PIC yang bisa diacak otomatis.
   const available = state.players.filter(
-    (p) => p.level !== "PIC" && !resting.has(p.id)
+    (p) =>
+      p.level !== "PIC" &&
+      (p.attendance || "Hadir") === "Hadir" &&
+      !resting.has(p.id)
   );
   if (available.length < 4) return null;
 
@@ -1020,7 +1108,8 @@ function init() {
     const nameInput = document.getElementById("player-name");
     const levelInput = document.getElementById("player-level");
     const paidInput = document.getElementById("player-paid");
-    if (addPlayer(nameInput.value, levelInput.value, paidInput.value)) {
+    const attInput = document.getElementById("player-attendance");
+    if (addPlayer(nameInput.value, levelInput.value, paidInput.value, attInput.value)) {
       nameInput.value = "";
       nameInput.focus();
     }

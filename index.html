@@ -49,9 +49,22 @@
           <option value="Belum">Belum</option>
           <option value="Lunas">Lunas</option>
         </select>
+        <select id="player-attendance" title="Status kehadiran">
+          <option value="Hadir">Hadir</option>
+          <option value="Belum Hadir">Belum Hadir</option>
+        </select>
         <button type="submit" class="btn btn-primary">Tambah</button>
       </form>
       <p id="form-message" class="form-message"></p>
+    </section>
+
+    <!-- ====== DAFTAR PEMAIN BELUM HADIR ====== -->
+    <section class="card">
+      <div class="section-head">
+        <h2>Daftar Pemain Belum Hadir</h2>
+        <span id="absent-count" class="pill">0 belum hadir</span>
+      </div>
+      <ul id="absent-list" class="absent-list"></ul>
     </section>
 
     <!-- ====== TABEL PEMAIN PER LEVEL ====== -->

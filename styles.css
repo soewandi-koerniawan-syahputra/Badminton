@@ -237,6 +237,35 @@ body {
   border-radius: 999px;
   white-space: nowrap;
 }
+.absent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+.absent-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.92rem;
+}
+.absent-list .empty {
+  grid-column: 1 / -1;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-style: italic;
+  justify-content: center;
+}
+.player-att-select.absent { border-color: var(--intermediate); color: #fcd34d; }
+.player-att-select,
 .player-level-select,
 .player-paid-select {
   font-size: 0.72rem;
@@ -526,6 +555,7 @@ body {
     flex-wrap: wrap;
     justify-content: flex-start;
   }
+  .player-att-select,
   .player-level-select,
   .player-paid-select {
     flex: 1 1 auto;
