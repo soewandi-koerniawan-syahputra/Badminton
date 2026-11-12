@@ -182,7 +182,7 @@ function allPlayersCopyText() {
   const counts = buildPlayCounts();
   const rows = state.players
     .filter((p) => p.level !== "PIC")
-    .map((p) => `${p.name} ${counts[p.id] || 0}`);
+    .map((p, i) => `${i + 1}. ${p.name} ${counts[p.id] || 0}`);
   const header = "List Jumlah Player Bermain";
   return header + "\n" + (rows.length ? rows.join("\n") : "Belum ada pemain.");
 }
@@ -191,7 +191,7 @@ function allPlayersCopyText() {
 function paidListCopyText() {
   const rows = state.players
     .filter((p) => p.level !== "PIC")
-    .map((p) => `${p.name} ${p.paid === "Lunas" ? "✓" : "✗"}`);
+    .map((p, i) => `${i + 1}. ${p.name} ${p.paid === "Lunas" ? "✓" : "✗"}`);
   const header = "Pelunasan Mabar";
   return header + "\n" + (rows.length ? rows.join("\n") : "Belum ada pemain.");
 }
